@@ -1,0 +1,3 @@
+CREATE hi
+CREATE bye
+WRITE hi d 512 10

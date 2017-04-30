@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include "header.h"
 // put one inode per block because it's easy
 
 //	fptr = fopen(diskFileName.c_str(), "rb");
@@ -17,39 +18,13 @@
 
 using namespace std;
 
-// 92 bytes
-typedef struct {
-	char fileName[32];
-	int fileSize;
-	int directPointers[12];
-	int indirectPointer;
-	int doubleIndirectPointer;
-} inode;
+int inodeMap[256];
 
-typedef struct {
-	int numBlocks;
-	int blockSize;
-	int blockNum;
-	int inodeMapLocation;
-	int freeBlocksLocation;
-} superBlock;
-
-superBlock super;
-
-void fillBlockWithGarbage(FILE* fptr) {
-    char garbage = 'a';
-    
-    int numOfBytesToWrite = super.blockSize - (ftell(fptr) % super.blockSize);
-    
-    if (numOfBytesToWrite != super.blockSize) {
-        fwrite(&garbage, sizeof(char), numOfBytesToWrite, fptr);
-    }
-    
-    //cout << numOfBytesToWrite << endl;
-}
+// array of however many blocks there are in the file
+// false means free
+bool* freeBlocks;
 
 int main(int argc, char** argv) {
-	int inodeMap[256];
 	
 	//Create the super block, set its index to 0
 	super.blockNum = 0;
@@ -71,9 +46,8 @@ int main(int argc, char** argv) {
 	super.numBlocks = atoi(argv[1]);
 	super.blockSize = atoi(argv[2]);
     
-    // array of however many blocks there are in the file
-    // false means free
-	bool freeBlocks[super.numBlocks];
+
+	freeBlocks = new bool [super.numBlocks];
     
 	//Check if NumBlocks is a Power of 2 //65536
 	if(!(super.numBlocks && !(super.numBlocks & (super.numBlocks-1)))) {
@@ -118,6 +92,9 @@ int main(int argc, char** argv) {
 	// Seek to the location of the second block and write inode map
 	fseek(fptr, super.blockSize, SEEK_SET);
 	super.inodeMapLocation = ftell(fptr);
+	for(int i = 0; i < 256; i++) {
+		inodeMap[i] = -1;
+	}
 	fwrite(inodeMap, 256 * sizeof(int), 1, fptr);
 	
 	fillBlockWithGarbage(fptr);
