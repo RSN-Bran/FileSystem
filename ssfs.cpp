@@ -63,10 +63,16 @@ void _create(const string& fileName) {
 	}
 
 	//All tests have been passed, proceed to create new inode in memory
+	//Initialize all pointers to -1, as these files currently have no data
 	inode newInode;
 	for(int i = 0; i < fileName.size(); i++) {
 		newInode.fileName[i] = fileName[i];
 	}
+	newInode.fileName[fileName.size()] = '\0';
+	newInode.fileSize = 0;
+	fill_n(newInode.directPointers, 12, -1);
+	newInode.indirectPointer = -1;
+	newInode.doubleIndirectPointer = -1;
 
 	//Copy the entire freeList into a local array
 	bool freeItemsInBlock[super.numBlocks];
@@ -119,6 +125,22 @@ void _read(string fileName, int start, int numBytes) {
 }
 
 void _list() {
+	//Create a local copy of the inode map
+	fseek(fptr, super.inodeMapLocation, SEEK_SET);
+	int tempInodeMap[256];
+	fread(tempInodeMap, 256*sizeof(int), 1, fptr);
+
+	//Loop through the iNode map, if the pointer is not to -1 then an inode exists
+	for(int i = 0; i < 32; i++) {
+		if(tempInodeMap[i] != -1) {
+			//Seek to block where the inode is held, print out its name and size
+			inode tempInode;
+			fseek(fptr, super.blockSize*tempInodeMap[i], SEEK_SET);
+			//NOT READING WHOLE BLOCK
+			fread(&tempInode, sizeof(inode), 1, fptr);
+			cout << "File Name: " << tempInode.fileName << "\tFile Size: " << tempInode.fileSize << endl;
+		}
+	}
 }
 
 void _shutdown() {

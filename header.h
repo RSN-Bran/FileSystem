@@ -1,6 +1,6 @@
 // 92 bytes
 typedef struct {
-	char fileName[32];
+	char fileName[33];
 	int fileSize;
 	int directPointers[12];
 	int indirectPointer;
