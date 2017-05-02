@@ -13,6 +13,7 @@ typedef struct {
 	int blockNum;
 	int inodeMapLocation;
 	int freeBlocksLocation;
+	int maxFileSize;
 } superBlock;
 
 superBlock super;

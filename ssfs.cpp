@@ -19,6 +19,66 @@ using namespace std;
 
 FILE* fptr;
 
+int getAFreeBlock() {
+	//Create a local copy of the free block list
+	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
+	bool tempFreeBlocks[super.numBlocks];
+	fread(tempFreeBlocks, super.numBlocks*sizeof(bool), 1, fptr);
+
+	//Loop through the free block list. Stop looping and save index once an open slot is found
+	int tempInd = -1;
+	for(int i = 0; i < super.numBlocks && tempInd == -1; i++) {
+		if(tempFreeBlocks[i] == false) {
+			tempFreeBlocks[i] = true;
+			tempInd = i;
+		}
+	}
+
+	//Write back the updated free block list to the disk
+	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
+	fwrite(tempFreeBlocks, super.numBlocks, 1, fptr);
+	fillBlockWithGarbage(fptr);
+
+	//Return the index of the free block
+	return tempInd;
+}
+
+//Takes in an array which represents blocks, which could come from direct pointers, indirect pointers, or double indirect pointers
+//Loops through this array and writes data to non-empty locations
+void writeData(inode& currentInode, int loops, int& numBytes, char c, int* pointers, int start) {
+	currentInode.fileSize += numBytes;
+	for(int i = 0; i < loops && numBytes != 0; i++) {
+		if(pointers[i] == -1) {
+			int freeBlock = getAFreeBlock();
+			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
+			//If the number of bytes is greater than the block size, fill the whole block with the character
+			//No need to fill with garbage
+			//Decrement the numBytes by the size of the block
+			if(numBytes >= super.blockSize) {
+				char arrayToWrite[super.blockSize];
+				fill_n(arrayToWrite, super.blockSize, c);
+				fwrite(&arrayToWrite, sizeof(arrayToWrite), 1, fptr);
+				numBytes -= super.blockSize;
+			}
+			//Partially fill block with the char, then add a Null Terminator, then fill the rest with garbage and set numBytes to 0
+			else{
+				char arrayToWrite[numBytes+1];
+				fill_n(arrayToWrite, numBytes, c);
+				arrayToWrite[numBytes] = '\0';
+				fwrite(&arrayToWrite, sizeof(arrayToWrite), 1, fptr);
+
+				fillBlockWithGarbage(fptr);
+				numBytes = 0;
+			}
+			pointers[i] = freeBlock;
+		}
+		//Need to check if a block with some info is not completely full, so we can continue to write to it
+		else {
+			
+		}
+	}
+}
+
 void _create(const string& fileName) {
 	//Checks if the filename is too long. Quits if it is
 	if(fileName.size() > 32) {
@@ -74,20 +134,9 @@ void _create(const string& fileName) {
 	newInode.indirectPointer = -1;
 	newInode.doubleIndirectPointer = -1;
 
-	//Copy the entire freeList into a local array
-	bool freeItemsInBlock[super.numBlocks];
-	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
-	int nextFreeBlock = -1;
+	//Call get a free block to get the next free block
+	int nextFreeBlock = getAFreeBlock();
 
-	//Loop through the local free list and record the first available block of memory
-	//NEED TO READ THE WHOLE BLOCK, FIX LATER
-	fread(freeItemsInBlock, super.numBlocks, 1, fptr);
-	for(int i = 0; i < super.numBlocks && nextFreeBlock == -1; i++) {
-		if(freeItemsInBlock[i] == false) {
-			nextFreeBlock = i;
-			freeItemsInBlock[i] = true;
-		}
-	}
 	fseek(fptr, super.inodeMapLocation, SEEK_SET);
 
 	//Update inodeMap with block num of newest Inode
@@ -101,11 +150,6 @@ void _create(const string& fileName) {
 	fseek(fptr, super.inodeMapLocation, SEEK_SET);
 	fwrite(tempInodeMap, 256*sizeof(int), 1, fptr);
 	fillBlockWithGarbage(fptr);
-
-	//Rewrite freeList
-	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
-	fwrite(freeItemsInBlock, super.numBlocks, 1, fptr);
-	fillBlockWithGarbage(fptr);
 	
 }
 
@@ -113,12 +157,159 @@ void _import(string ssfsFile, string unixFile) {
 }
 
 void _cat(string fileName) {
+	//Create a local copy of the inode map
+	fseek(fptr, super.inodeMapLocation, SEEK_SET);
+	int tempInodeMap[256];
+	fread(tempInodeMap, 256*sizeof(int), 1, fptr);
+
+	//Loop through INode Map, if an inode is present at an index, traverse it
+	//If the traversed iNode has the same name as desired fileName, save its index and exit the loop
+	int iNodeInd = -1;
+	inode currentInode;
+	for(int i = 0; i < 32 && iNodeInd == -1; i++) {
+		int tempBlock = tempInodeMap[i];
+		if(tempBlock != -1) {
+			fseek(fptr, super.blockSize * tempBlock, SEEK_SET);
+			//NOT READING WHOLE BLOCK
+			fread(&currentInode, sizeof(inode), 1, fptr);
+			if(currentInode.fileName == fileName) {
+				iNodeInd = i;
+			}
+		}
+	}
+	//If the file is not found, print an error message and quit
+	if(iNodeInd == -1) {
+		fprintf(stderr, "File is not present in File System\n");
+		return;
+	}
+
+	//Traverse through direct Pointers, stop reading if -1 is ever reached
+	bool reading = true;
+	for(int i = 0; i < 12 && reading; i++) {
+		if(currentInode.directPointers[i] == -1) {
+			reading = false;
+		}
+		//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
+		else {
+			char test;
+			fseek(fptr, super.blockSize * currentInode.directPointers[i], SEEK_SET);
+			for(int j = 0; j < super.blockSize; j++) {
+				fread(&test, sizeof(char), 1, fptr);
+				cout << test;
+				if(test == '\0') {
+					break;
+				}
+			}
+		}
+	}
+
+	//Need to traverse indirect Block Pointer
+	if(currentInode.indirectPointer != -1) {
+	}
+	//Need to traverse double indirect block pointer
+	if(currentInode.doubleIndirectPointer != -1) {
+	}
+	
+	cout << endl;
+	
 }
 
 void _delete(string fileName) {
 }
 
+//IMPLEMENT ALL THREE CASES, NEED START
 void _write(string fileName, char c, int start, int numBytes) {
+
+
+	//Create a local copy of the inode map
+	fseek(fptr, super.inodeMapLocation, SEEK_SET);
+	int tempInodeMap[256];
+	fread(tempInodeMap, 256*sizeof(int), 1, fptr);
+
+	//Create a local copy of the free block list
+	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
+	bool tempFreeBlocks[super.numBlocks];
+	fread(tempFreeBlocks, super.numBlocks*sizeof(bool), 1, fptr);
+
+	//Loop through INode Map, if an inode is present at an index, traverse it
+	//If the traversed iNode has the same name as desired fileName, save its index and exit the loop
+	int iNodeInd = -1;
+	inode currentInode;
+	for(int i = 0; i < 32 && iNodeInd == -1; i++) {
+		int tempBlock = tempInodeMap[i];
+		if(tempBlock != -1) {
+			fseek(fptr, super.blockSize * tempBlock, SEEK_SET);
+			//NOT READING WHOLE BLOCK
+			fread(&currentInode, sizeof(inode), 1, fptr);
+			if(currentInode.fileName == fileName) {
+				iNodeInd = i;
+			}
+		}
+	}
+	//If the file is not found, print an error message and quit
+	if(iNodeInd == -1) {
+		fprintf(stderr, "File is not present in File System\n");
+		return;
+	}
+
+	if(numBytes > super.maxFileSize) {
+		fprintf(stderr, "Cannot write more than maximum file size.\n");
+		return;
+	}
+
+	if(numBytes + currentInode.fileSize > super.maxFileSize) {
+		fprintf(stderr, "Not enough space left in file.\n");
+		return;
+	}
+
+
+	//CASE 1: Start is within range of fileSize; OVERWRITE
+	if(start < currentInode.fileSize) {
+		//CASE 1A: EXCLUSIVE OVERWRITE
+		if(start + numBytes <= currentInode.fileSize) {
+		}
+		//CASE 1B: OVERWRITE + APPEND
+		else {
+		}
+	}
+
+	//CASE 2: Start is at fileSize; APPEND
+	if(start == currentInode.fileSize) {
+	}
+
+	//CASE 3: Start is beyond fileSize; ERROR
+	if(start > currentInode.fileSize) {
+		fprintf(stderr, "Starting index is beyond size of file.\n");
+		return;
+	}
+	
+
+
+
+
+	writeData(currentInode, 12, numBytes, c, currentInode.directPointers, start);	
+
+	//If there are still more bytes to read, need to check indirect block pointer
+	if(numBytes != 0) {
+		//Indirect block pointer does not exist, find a free block, create it, and fill it with -1s
+		if(currentInode.indirectPointer == -1) {
+			int freeBlock = getAFreeBlock();
+			currentInode.indirectPointer = freeBlock;
+			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
+			int tempBlockPointers[super.blockSize/sizeof(int)];
+			fill_n(tempBlockPointers, super.blockSize/sizeof(int), -1);
+			fwrite(tempBlockPointers, sizeof(int), super.blockSize/sizeof(int), fptr);
+		}
+		//Now begin to write to the blocks
+		fseek(fptr, super.blockSize*currentInode.indirectPointer, SEEK_SET);
+		int indirectPointerTemp[super.blockSize/sizeof(int)];
+		fread(indirectPointerTemp, sizeof(int), super.blockSize/sizeof(int), fptr);
+		writeData(currentInode, super.blockSize/sizeof(int), numBytes, c, indirectPointerTemp, start);
+	}
+	//Rewrite inode
+	fseek(fptr, super.blockSize * tempInodeMap[iNodeInd], SEEK_SET);
+	fwrite(&currentInode, sizeof(currentInode), 1, fptr);
+	fillBlockWithGarbage(fptr);
 }
 
 void _read(string fileName, int start, int numBytes) {

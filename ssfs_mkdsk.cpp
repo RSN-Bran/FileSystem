@@ -115,6 +115,7 @@ int main(int argc, char** argv) {
 	long freeBlocksEnd = ftell(fptr);
 	
 	// seek back to the beginning so we're at the right spot for writing the super block
+	super.maxFileSize = (super.blockSize*12) + ((super.blockSize/sizeof(int))*super.blockSize)+ (((super.blockSize/sizeof(int))*super.blockSize)*(super.blockSize/sizeof(int)));
 	fseek(fptr, 0, SEEK_SET);
 	fwrite(&super, sizeof(super), 1, fptr);
 	fillBlockWithGarbage(fptr);
