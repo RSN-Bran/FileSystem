@@ -11,6 +11,20 @@
 
 #include "header.h"
 
+
+/*LIST OF FUNCTIONS:
+CREATE: DONE
+IMPORT: NOT STARTED
+CAT: PARTIALLY DONE
+			ONLY PRINTS DATA IN DIRECT POINTERS
+DELETE: COMPLETE LOGIC, HAS BUGS (DEPENDS ON WRITE), COULD COPY SOME MORE LOGIC INTO SEPERATE FUNCTIONS
+WRITE: NEEDS REWORK, CURRENTLY DOES DIRECT POINTERS, BUT LOGIC NEEDS OVERHAUL
+READ: NOT STARTED
+LIST: DONE
+SHUTDOWN: NOT STARTED
+
+*/
+
 //TO DO: Read entire blocks, rather than only what is needed. Create function to do this.
 
 
@@ -40,6 +54,7 @@ int getAFreeBlock() {
 	fillBlockWithGarbage(fptr);
 
 	//Return the index of the free block
+	cout << tempInd << endl;
 	return tempInd;
 }
 
@@ -79,6 +94,22 @@ void writeData(inode& currentInode, int loops, int& numBytes, char c, int* point
 	}
 }
 
+void deleteData(inode& currentInode, int loops, int* pointers, bool* tempFreeBlocks) {
+	//Loop through the Pointers and delete everything in them
+	for(int i = 0; i < loops; i++) {
+		//Found an occupied direct pointer, seek to the block, delete everything in it
+		//Set the direct pointer to -1, and the free block location to free
+		if(pointers[i] != -1) {
+			int block = pointers[i];
+			//Not actually deleting anything, just removing pointer
+			tempFreeBlocks[block] = false;
+			pointers[i] = -1;
+		}
+	}
+}
+
+//COMPLETE
+//Check inodes and create a new file at the first free inode.
 void _create(const string& fileName) {
 	//Checks if the filename is too long. Quits if it is
 	if(fileName.size() > 32) {
@@ -209,14 +240,121 @@ void _cat(string fileName) {
 	//Need to traverse double indirect block pointer
 	if(currentInode.doubleIndirectPointer != -1) {
 	}
-	
+
 	cout << endl;
 	
 }
 
+//COMPLETED LOGIC, BUT HAS BUGS
+//Delete the given file and free all blocks associated with it
 void _delete(string fileName) {
+
+	//Create a local copy of the inode map
+	fseek(fptr, super.inodeMapLocation, SEEK_SET);
+	int tempInodeMap[256];
+	fread(tempInodeMap, 256*sizeof(int), 1, fptr);
+
+	//Create a local copy of the free block list
+	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
+	bool tempFreeBlocks[super.numBlocks];
+	fread(tempFreeBlocks, super.numBlocks*sizeof(bool), 1, fptr);
+
+
+	//Loop through INode Map, if an inode is present at an index, traverse it
+	//If the traversed iNode has the same name as desired fileName, save its index and exit the loop
+	int iNodeInd = -1;
+	inode currentInode;
+	for(int i = 0; i < 32 && iNodeInd == -1; i++) {
+		int tempBlock = tempInodeMap[i];
+		if(tempBlock != -1) {
+			fseek(fptr, super.blockSize * tempBlock, SEEK_SET);
+			//NOT READING WHOLE BLOCK
+			fread(&currentInode, sizeof(inode), 1, fptr);
+			if(currentInode.fileName == fileName) {
+				iNodeInd = i;
+			}
+		}
+	}
+
+	//If the file is not found, print an error message and quit
+	if(iNodeInd == -1) {
+		cerr << "Error: Cannot delete '" << fileName << "'. This file does not exist." << endl;
+		return;
+	}
+	
+	//Delete the direct pointers
+	deleteData(currentInode, 12, currentInode.directPointers, tempFreeBlocks);
+
+	//Delete the indirect pointer
+	if(currentInode.indirectPointer != -1) {
+		//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
+		int tempDirectPointers[super.blockSize/sizeof(int)];
+		fseek(fptr, super.blockSize * currentInode.indirectPointer, SEEK_SET);
+		fread(tempDirectPointers, super.blockSize, 1, fptr);
+
+		//Call the deleteData function on this array
+		deleteData(currentInode, super.blockSize/sizeof(int), tempDirectPointers, tempFreeBlocks);
+
+		//Rewrite the new array to its original location, set the indirect Pointer to -1
+		fseek(fptr, super.blockSize * currentInode.indirectPointer, SEEK_SET);
+		fwrite(tempDirectPointers, super.blockSize, 1, fptr);
+		currentInode.indirectPointer = -1;
+		
+	}
+	
+	//Delete the double indirect pointer
+	if(currentInode.doubleIndirectPointer != -1) {
+		//Create an array of indirect pointers, to be filled by the contents of the double indirect pointer block
+		int tempIndirectPointers[super.blockSize/sizeof(int)];
+		fseek(fptr, super.blockSize * currentInode.doubleIndirectPointer, SEEK_SET);
+		fread(tempIndirectPointers, super.blockSize, 1, fptr);
+
+		//Loop through this array, and use similar logic from the indirect pointer if statement for each indirect pointer in the array
+		for(int i = 0; i < super.blockSize/sizeof(int); i++) {
+
+			//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
+			int tempDirectPointers[super.blockSize/sizeof(int)];
+			fseek(fptr, super.blockSize * tempIndirectPointers[i], SEEK_SET);
+			fread(tempDirectPointers, super.blockSize, 1, fptr);
+
+			//Call the deleteData function on this array
+			deleteData(currentInode, super.blockSize/sizeof(int), tempDirectPointers, tempFreeBlocks);
+
+			//Rewrite the new array to its original location, set the indirect Pointer to -1
+			fseek(fptr, super.blockSize * tempIndirectPointers[i], SEEK_SET);
+			fwrite(tempDirectPointers, super.blockSize, 1, fptr);
+			tempIndirectPointers[i] = -1;	
+		}
+
+		//Rewrite the new array of indirect block pointers to its original location, set the d ouble indirect pointer to -1
+		fseek(fptr, super.blockSize * currentInode.doubleIndirectPointer, SEEK_SET);
+		fwrite(tempIndirectPointers, super.blockSize, 1, fptr);
+		currentInode.doubleIndirectPointer = -1;
+	}
+
+	//Set the size of the inode and its name to default values
+	currentInode.fileSize = 0;
+	fill_n(currentInode.fileName, 33, '\0');
+
+	//Go to that block and write the inode
+	fseek(fptr, tempInodeMap[iNodeInd]*super.blockSize, SEEK_SET);
+	fwrite(&currentInode, sizeof(inode), 1, fptr);
+	fillBlockWithGarbage(fptr);
+
+	//Rewrite inode map
+	tempInodeMap[iNodeInd] = -1;
+	fseek(fptr, super.inodeMapLocation, SEEK_SET);
+	fwrite(tempInodeMap, 256*sizeof(int), 1, fptr);
+	fillBlockWithGarbage(fptr);
+
+	//Write back the updated free block list to the disk
+	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
+	fwrite(tempFreeBlocks, super.numBlocks, 1, fptr);
+	fillBlockWithGarbage(fptr);
+
 }
 
+//UNFINISHED
 //IMPLEMENT ALL THREE CASES, NEED START
 void _write(string fileName, char c, int start, int numBytes) {
 
@@ -315,6 +453,8 @@ void _write(string fileName, char c, int start, int numBytes) {
 void _read(string fileName, int start, int numBytes) {
 }
 
+//COMPLETE
+//List the names and sizes of all current inodes in the file
 void _list() {
 	//Create a local copy of the inode map
 	fseek(fptr, super.inodeMapLocation, SEEK_SET);
