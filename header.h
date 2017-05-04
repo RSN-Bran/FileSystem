@@ -1,10 +1,13 @@
-// 92 bytes
+// 93 bytes, Min block size is 128
+//Want to add unfinished block and unfinished byte ints
 typedef struct {
 	char fileName[33];
 	int fileSize;
 	int directPointers[12];
 	int indirectPointer;
 	int doubleIndirectPointer;
+	int incompleteBlock;
+	int byteProgress;
 } inode;
 
 typedef struct {
