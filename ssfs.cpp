@@ -101,74 +101,26 @@ int getAFreeBlock() {
 
 int findBlock(inode& currentInode, int start) {
 	//If start is within the direct blocks, return which index to go to
-	if(start < super.blockSize*12) {
-		return start/super.blockSize;
-	}
-	else {
-		if(start < (super.blockSize*12) + ((super.blockSize/sizeof(int))*super.blockSize)) {
-			
-		}
-		else {
-		}
-	}
+	return start/super.blockSize;
 
 }
 //Takes in an array which represents blocks, which could come from direct pointers, indirect pointers, or double indirect pointers
 //Loops through this array and writes data to non-empty locations
 void writeData(inode& currentInode, int loops, int& numBytes, char c, int* pointers, int& placeInBlock, int block, bool nullTerm) {
-
-
-
-
-
-//	//If there is currently an incomplete block, then start writing to it	
-//	if(currentInode.incompleteBlock != -1) {
-
-//		//Read the block into the buffer
-//		readFullBlocks(super.blockSize * currentInode.incompleteBlock, "data");
-
-//		//Loop through the available space. Stop looping if the edge of the  block is reached or all bytes are written
-//		for(int i = currentInode.byteProgress; i < super.blockSize && numBytes != 0; i++) {
-//			buffer[i] = c;
-//			numBytes--;
-//			currentInode.byteProgress++;
-//		}
-//		
-//		//Append Null Terminator to the end of the buffer if there is room left
-//		if(currentInode.byteProgress != super.blockSize) {
-//			buffer[currentInode.byteProgress] = '\0';
-//		}
-
-//		//Write this block back to the file
-//		fseek(fptr, super.blockSize * currentInode.incompleteBlock, SEEK_SET);
-//		fwrite(buffer, super.blockSize, 1, fptr);
-
-//		//All bytes have been written so we must unconditionally return
-//		if(numBytes == 0) {
-//			//If there is also no space left, set incomplete block to complete
-//			if(currentInode.byteProgress == super.blockSize) {
-//				currentInode.incompleteBlock = -1;
-//				currentInode.byteProgress = -1;
-//			}
-//			return;
-//		}
-
-//		//If we got this far, we have more to write, but this block is now full, so set it to complete, and continue by finding a fresh block
-//		currentInode.incompleteBlock = -1;
-//		currentInode.byteProgress = -1;
-//	}
-
 	//We take in an array of block indexes, which may be from direct or indirect blocks
 	//Block is the block which start is in, so we start looping from there
 	for(int i = block; i < loops && numBytes != 0; i++) {
 
-		readFullBlocks(super.blockSize * pointers[i], "data");
+		//If this direct pointer isn't free, find a free block for it
+		if(pointers[i] == -1) {
+			pointers[i] = getAFreeBlock();
+		}
+
+		cout << "Writing to block: " << pointers[i] << endl;
 
 		//For the first run of the loop, might need to start at some point other than the first byte
 		if(i == block) {
-			if(pointers[i] == -1) {
-				pointers[i] = getAFreeBlock();
-			}
+			readFullBlocks(super.blockSize * pointers[i], "data");
 			for(int j = placeInBlock; j < super.blockSize && numBytes != 0; j++) {
 				buffer[j] = c;
 				numBytes--;
@@ -183,53 +135,33 @@ void writeData(inode& currentInode, int loops, int& numBytes, char c, int* point
 			//Write this block back to the file
 			fseek(fptr, super.blockSize * pointers[i], SEEK_SET);
 			fwrite(buffer, super.blockSize, 1, fptr);
-
-			//All bytes have been written so we must unconditionally return
-			if(numBytes == 0) {
-				//If there is also no space left, set incomplete block to complete
-				if(currentInode.byteProgress == super.blockSize) {
-					currentInode.incompleteBlock = -1;
-					currentInode.byteProgress = -1;
-				}
-				return;
-			}
 			
 		}
 
 		else {
-		}
-	}
-		
-//		if(pointers[i] == -1) {
-//			int freeBlock = getAFreeBlock();
-//			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
-
-//			//If the number of bytes is greater than the block size, fill the whole block with the character
-//			//No need to fill with garbage
-//			//Decrement the numBytes by the size of the block
-//			if(numBytes >= super.blockSize) {
-//				char arrayToWrite[super.blockSize];
-//				fill_n(arrayToWrite, super.blockSize, c);
-//				fwrite(&arrayToWrite, super.blockSize, 1, fptr);
-//				numBytes -= super.blockSize;
-//			}
+			if(numBytes >= super.blockSize) {
+				char arrayToWrite[super.blockSize];
+				fill_n(arrayToWrite, super.blockSize, c);
+				fseek(fptr, super.blockSize * pointers[i], SEEK_SET);
+				fwrite(&arrayToWrite, super.blockSize, 1, fptr);
+				numBytes -= super.blockSize;
+			}
 
 //			//Partially fill block with the char, then add a Null Terminator, then fill the rest with garbage and set numBytes to 0
-//			else{
-//				//Record which block is partially filled
-//				currentInode.incompleteBlock = freeBlock;
-//				char arrayToWrite[numBytes+1];
-//				fill_n(arrayToWrite, numBytes, c);
-//				arrayToWrite[numBytes] = '\0';
-//				fwrite(&arrayToWrite, numBytes+1, 1, fptr);
-//				
-//				//Record the specific byte after writing stopped, so we can resume writing later
-//				currentInode.byteProgress = (ftell(fptr)%super.blockSize) - 1;
-//				fillBlockWithGarbage(fptr);
-//				numBytes = 0;
-//			}
-
-//			pointers[i] = freeBlock;
+			else{
+				char arrayToWrite[numBytes+1];
+				fill_n(arrayToWrite, numBytes, c);
+				arrayToWrite[numBytes] = '\0';
+				cout << ftell(fptr) << endl;
+				fseek(fptr, super.blockSize * pointers[i], SEEK_SET);
+				fwrite(&arrayToWrite, numBytes+1, 1, fptr);
+				
+				//Record the specific byte after writing stopped, so we can resume writing later
+				fillBlockWithGarbage(fptr);
+				numBytes = 0;
+			}
+		}
+	}
 }
 
 void deleteData(inode& currentInode, int loops, int* pointers, bool* tempFreeBlocks) {
@@ -308,8 +240,6 @@ void _create(const string& fileName) {
 	fill_n(newInode.directPointers, 12, -1);
 	newInode.indirectPointer = -1;
 	newInode.doubleIndirectPointer = -1;
-	newInode.incompleteBlock = -1;
-	newInode.byteProgress = -1;
 
 	//Call get a free block to get the next free block
 	int nextFreeBlock = getAFreeBlock();
@@ -409,7 +339,6 @@ void _cat(string fileName) {
 				}
 			}
 		}
-		
 	}
 	
 	//--------------------------------------------------------------------------------------------
@@ -427,7 +356,6 @@ void _cat(string fileName) {
 
 		//Loop through this array, and use similar logic from the indirect pointer if statement for each indirect pointer in the array
 		for(int i = 0; i < super.blockSize/sizeof(int); i++) {
-
 			//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
 			int tempDirectPointers[super.blockSize/sizeof(int)];		
 			readFullBlocks(super.blockSize * tempIndirectPointers[i], "data");
@@ -436,20 +364,22 @@ void _cat(string fileName) {
 			//Traverse through direct Pointers stored in this indirectPointer block, stop reading if -1 is ever reached
 			//Uses same logic as before
 			bool reading = true;
-			for(int i = 0; i < super.blockSize/sizeof(int) && reading; i++) {
-				if(tempDirectPointers[i] == -1) {
+			for(int j = 0; j < super.blockSize/sizeof(int) && reading; j++) {
+				if(tempDirectPointers[j] == -1) {
 					reading = false;
 				}
 				//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
 				else {
-					char test;
-					readFullBlocks(super.blockSize * tempDirectPointers[i], "data");
+					cout << "Reading from block: " << tempIndirectPointers[j] << endl;
 					
-					for(int j = 0; j < super.blockSize; j++) {
-						if(buffer[j] == '\0') {
+					char test;
+					readFullBlocks(super.blockSize * tempDirectPointers[j], "data");
+					
+					for(int k = 0; k < super.blockSize; k++) {
+						if(buffer[k] == '\0') {
 							break;
 						}
-						cout << buffer[j];
+						cout << buffer[k];
 					}
 				}
 			}
@@ -622,20 +552,17 @@ void _write(string fileName, char c, int start, int numBytes) {
 	int placeInBlock = start%super.blockSize;
 
 	bool nullTerm = false;
+
 	//We write fileSize here since file will eventually be of file size = currentInode.fileSize + numBytes; only set the value once
 	//Previously we were adding numBytes to fileSize each time in writeData, so it was giving wrong value for fileSize
-	if(numBytes - start < currentInode.fileSize) {
-		if(numBytes > currentInode.fileSize) {
-			currentInode.fileSize = start + numBytes;
-		}
-		nullTerm = true;
-	}
-	else {
+	if(start + numBytes >= currentInode.fileSize) {
 		currentInode.fileSize = start + numBytes;
+	} else {
+		nullTerm = true;
 	}
 	
 	//Write into first 12 data blocks first
-	writeData(currentInode, 12, numBytes, c, currentInode.directPointers, placeInBlock, blockToWrite, nullTerm);	
+	writeData(currentInode, 12, numBytes, c, currentInode.directPointers, placeInBlock, blockToWrite, nullTerm);
 	
 	//If there are still more bytes to read, need to check indirect block pointer
 	if(numBytes != 0) {
@@ -654,7 +581,16 @@ void _write(string fileName, char c, int start, int numBytes) {
 		int indirectPointerTemp[super.blockSize/sizeof(int)];
 		fread(indirectPointerTemp, sizeof(int), super.blockSize/sizeof(int), fptr);
 		
-		//writeData(currentInode, super.blockSize/sizeof(int), numBytes, c, indirectPointerTemp, start);
+		//This scenario is for if we start writing to the indirect block from the start
+		if(blockToWrite >= 12) {
+			blockToWrite -= 12;
+		}
+		//This scenario is for if we wrote to the direct block but the rest needs to go to the indirect block
+		else {
+			placeInBlock = 0;
+			blockToWrite = 0;
+		}
+		writeData(currentInode, super.blockSize/sizeof(int), numBytes, c, indirectPointerTemp, placeInBlock, blockToWrite, nullTerm);
 		
 		//After writeData returns, the temporary indirectPointerTemp array we created has all the updated pointers to the new data blocks
 		//Need to write this array back to the disk at block super.blockSize*currentInode.indirectPointer since that's where this array will be stored
@@ -668,15 +604,56 @@ void _write(string fileName, char c, int start, int numBytes) {
 	//Now need to check if even more numBytes left, for doubleIndirectPointer
 	//Not yet implemented but should be pretty simple, uses most of same logic as before
 	if(numBytes != 0) {
+		//This is an array of indirect Block pointers
+		int indirectBlockPointers[super.blockSize/sizeof(int)];
+
 		//Double Indirect block pointer does not exist, find a free block, create it, and fill it with -1s
 		if(currentInode.doubleIndirectPointer == -1) {
+			//allocate free space for the double indirect block pointer
 			int freeBlock = getAFreeBlock();
 			currentInode.doubleIndirectPointer = freeBlock;
+			//Write the array of indirect block pointers to the location of the double indirect block pointer
 			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
-			int tempIndirectBlockPointers[super.blockSize/sizeof(int)];
-			fill_n(tempIndirectBlockPointers, super.blockSize/sizeof(int), -1);
-			fwrite(tempIndirectBlockPointers, super.blockSize, 1, fptr);
+			fill_n(indirectBlockPointers, super.blockSize/sizeof(int), -1);
+			fwrite(indirectBlockPointers, super.blockSize, 1, fptr);
 		}
+
+		//Loop through the elements in the array of indirect block pointers, create arrays of block pointers in each one and write them
+		for(int i = 0; i < super.blockSize/sizeof(int) && numBytes != 0; i++) {
+			//Set the index of the indirect block pointer to be to a block of direct pointers
+			int freeBlock = getAFreeBlock();
+			indirectBlockPointers[i] = freeBlock;
+			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
+			int blockPointers[super.blockSize/sizeof(int)];
+			fill_n(blockPointers, super.blockSize/sizeof(int), -1);
+			fwrite(blockPointers, super.blockSize, 1, fptr);
+
+			//Now begin to write to the blocks
+			fseek(fptr, super.blockSize*indirectBlockPointers[i], SEEK_SET);
+			int indirectPointerTemp[super.blockSize/sizeof(int)];
+			fread(indirectPointerTemp, sizeof(int), super.blockSize/sizeof(int), fptr);
+
+			//Check where the block is, if it's in an indirect block allocated from a double indirect block, subtract to get the indexes
+			//This is for if the starting index is in the double indirect pointer
+			if(blockToWrite >= super.blockSize/sizeof(int)) {
+				blockToWrite -= super.blockSize/sizeof(int);
+			}
+			//this is for if we did some previous writing and needed more space
+			else {
+				placeInBlock = 0;
+				blockToWrite = 0;
+			}
+
+			writeData(currentInode, super.blockSize/sizeof(int), numBytes, c, indirectPointerTemp, placeInBlock, blockToWrite, nullTerm);
+
+			fseek(fptr, super.blockSize*currentInode.indirectPointer, SEEK_SET);
+			fwrite(indirectPointerTemp, super.blockSize, 1, fptr);
+		}
+
+		//Write the block of indirect pointers
+		fseek(fptr, super.blockSize*currentInode.doubleIndirectPointer, SEEK_SET);
+		fwrite(indirectBlockPointers, super.blockSize, 1, fptr);
+
 	}
 	
 	//Rewrite inode

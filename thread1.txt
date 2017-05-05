@@ -1,5 +1,4 @@
 CREATE hi
-WRITE hi x 0 512
-WRITE hi y 20 10
+WRITE hi x 0 71681
 CAT hi
 LIST

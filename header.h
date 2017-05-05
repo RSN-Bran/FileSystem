@@ -6,8 +6,6 @@ typedef struct {
 	int directPointers[12];
 	int indirectPointer;
 	int doubleIndirectPointer;
-	int incompleteBlock;
-	int byteProgress;
 } inode;
 
 typedef struct {
