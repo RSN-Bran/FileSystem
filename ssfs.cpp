@@ -31,6 +31,9 @@ using namespace std;
 FILE* fptr;
 char* buffer;
 
+void _delete(string fileName);
+void _write(string fileName, char c, int start, int numBytes);
+
 //Reads numBlocksToRead blocks from the DISK, starting at byte number startLocation; puts the data into buffer
 void readFullBlocks(int startLocation, string mode) {
 	//Seek to the correct location in the disk
@@ -116,7 +119,6 @@ void writeData(inode& currentInode, int loops, int& numBytes, char c, int* point
 			pointers[i] = getAFreeBlock();
 		}
 
-		cout << "Writing to block: " << pointers[i] << endl;
 
 		//For the first run of the loop, might need to start at some point other than the first byte
 		if(i == block) {
@@ -152,7 +154,6 @@ void writeData(inode& currentInode, int loops, int& numBytes, char c, int* point
 				char arrayToWrite[numBytes+1];
 				fill_n(arrayToWrite, numBytes, c);
 				arrayToWrite[numBytes] = '\0';
-				cout << ftell(fptr) << endl;
 				fseek(fptr, super.blockSize * pointers[i], SEEK_SET);
 				fwrite(&arrayToWrite, numBytes+1, 1, fptr);
 				
@@ -260,12 +261,43 @@ void _create(const string& fileName) {
 	
 }
 
+//DONE
 void _import(string ssfsFile, string unixFile) {
+	//Delete the existing file and then recreate it in order to overwrite contents easily
+	_delete(ssfsFile);
+	_create(ssfsFile);
+	
+	int length;
+	char* unixBuffer;
+	//Read contents of the inputFile into a char buffer, set the last character to be Null terminator
+	ifstream inputFile(unixFile.c_str());
+	if(inputFile.is_open()) {
+		inputFile.seekg(0, inputFile.end);
+
+		length = inputFile.tellg();
+		unixBuffer = new char [length];
+		inputFile.seekg(0, inputFile.beg);
+		inputFile.read(unixBuffer, length-1);
+		unixBuffer[length-1] = '\0';
+		inputFile.close();
+	}
+
+	else {
+		fprintf(stderr, "Unable to open the unixFile\n");
+		return;
+	}
+
+	//Call write on each character
+	for(int i= 0; i < length-1; i++) {
+		_write(ssfsFile, unixBuffer[i], i, 1);
+	}
+
+
 }
 
 
 //ALMOST COMPLETED! CHECK LOGIC FOR DOUBLE INDIRECT BLOCK
-void _cat(string fileName) {
+void _cat(string fileName, int start, int numBytes) {
 	//Create a local copy of the inode map	
 	int tempInodeMap[256];
 	readFullBlocks(super.inodeMapLocation, "inodeMap");
@@ -292,55 +324,85 @@ void _cat(string fileName) {
 		return;
 	}
 
+	int startingBlock = findBlock(currentInode, start);
+	start %= super.blockSize;
+
 	//Traverse through direct Pointers, stop reading if -1 is ever reached
 	bool reading = true;
-	for(int i = 0; i < 12 && reading; i++) {
+	for(int i = startingBlock; i < 12 && reading && numBytes != 0; i++) {
 		if(currentInode.directPointers[i] == -1) {
 			reading = false;
 		}
 		//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
 		else {
-			char test;
-			readFullBlocks(super.blockSize * currentInode.directPointers[i], "data");
-			
-			for(int j = 0; j < super.blockSize; j++) {
-				if(buffer[j] == '\0') {
-					break;
+			if(i == startingBlock) {
+				readFullBlocks(super.blockSize*currentInode.directPointers[i], "data");
+				for(int j = start; j < super.blockSize && numBytes != 0; j++) {
+					if(buffer[j] == '\0') {
+						break;
+					}
+					numBytes--;
+					cout << buffer[j];
+				}	
+			}
+			else {
+				readFullBlocks(super.blockSize * currentInode.directPointers[i], "data");		
+				for(int j = 0; j < super.blockSize && numBytes != 0; j++) {
+					if(buffer[j] == '\0') {
+						break;
+					}
+					numBytes--;
+					cout << buffer[j];
 				}
-				cout << buffer[j];
 			}
 		}
 	}
-
+	if(startingBlock >= 12) {
+		startingBlock -= 12;
+	}
+	else {
+		startingBlock = 0;
+	}
 	//Need to traverse indirect Block Pointer; inside we use the same logic as before except instead of only 12 data block pointers we have blockSize/size int
 	if(currentInode.indirectPointer != -1) {
 		//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
 		int tempDirectPointers[super.blockSize/sizeof(int)];		
 		readFullBlocks(super.blockSize * currentInode.indirectPointer, "data");
 		memcpy(&tempDirectPointers, buffer, super.blockSize);
-		
+
 		//Traverse through direct Pointers stored in this indirectPointer block, stop reading if -1 is ever reached
 		//Uses same logic as before
 		bool reading = true;
-		for(int i = 0; i < super.blockSize/sizeof(int) && reading; i++) {
+
+		for(int i = startingBlock; i < super.blockSize/sizeof(int) && reading && numBytes != 0; i++) {
 			if(tempDirectPointers[i] == -1) {
 				reading = false;
 			}
 			//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
 			else {
-				char test;
+				int loop;
+				if(i == startingBlock) {
+					//cout << start << endl;
+					loop = startingBlock;
+				}
+				else {
+					loop = 0;
+				}
 				readFullBlocks(super.blockSize * tempDirectPointers[i], "data");
 				
-				for(int j = 0; j < super.blockSize; j++) {
+				for(int j = loop; j < super.blockSize && numBytes != 0; j++) {
+					//cout << j << " " << numBytes << endl;
 					if(buffer[j] == '\0') {
 						break;
 					}
+					numBytes--;
 					cout << buffer[j];
 				}
 			}
 		}
 	}
 	
+	startingBlock -= super.blockSize/sizeof(int);
 	//--------------------------------------------------------------------------------------------
 	//THESE NEED TO BE CHECKED, LOGIC MIGHT NOT BE CORRECT; need to finish _write() first!
 	//As of right now, I'm pretty sure printing out from indirectPointers block works correctly (try writing 7000 bytes and printing it out, it works)
@@ -355,7 +417,7 @@ void _cat(string fileName) {
 		memcpy(&tempIndirectPointers, buffer, super.blockSize);
 
 		//Loop through this array, and use similar logic from the indirect pointer if statement for each indirect pointer in the array
-		for(int i = 0; i < super.blockSize/sizeof(int); i++) {
+		for(int i = startingBlock; i < super.blockSize/sizeof(int); i++) {
 			//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
 			int tempDirectPointers[super.blockSize/sizeof(int)];		
 			readFullBlocks(super.blockSize * tempIndirectPointers[i], "data");
@@ -370,7 +432,7 @@ void _cat(string fileName) {
 				}
 				//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
 				else {
-					cout << "Reading from block: " << tempIndirectPointers[j] << endl;
+
 					
 					char test;
 					readFullBlocks(super.blockSize * tempDirectPointers[j], "data");
@@ -662,9 +724,6 @@ void _write(string fileName, char c, int start, int numBytes) {
 	fillBlockWithGarbage(fptr);
 }
 
-void _read(string fileName, int start, int numBytes) {
-}
-
 //COMPLETE
 //List the names and sizes of all current inodes in the file
 void _list() {
@@ -736,7 +795,7 @@ int main(int argc, char** argv) {
 		}
 		else if(command == "CAT") {
 			ss >> command;
-			_cat(command);
+			_cat(command, 0, -1);
 		}
 		else if(command == "DELETE") {
 			ss >> command;
@@ -755,7 +814,7 @@ int main(int argc, char** argv) {
 			int start;
 			int numBytes;
 			ss >> fileName >> start >> numBytes;
-			_read(fileName, start, numBytes);
+			_cat(fileName, start, numBytes);
 		}
 		else if(command == "LIST") {
 			_list();

@@ -1,4 +1,4 @@
-CREATE hi
-WRITE hi x 0 71681
-CAT hi
+CREATE meow
+WRITE meow x 0 7000
+READ meow 6000 1000
 LIST
