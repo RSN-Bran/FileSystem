@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstring>
+#include <time.h>
 
 #include "header.h"
 
@@ -93,6 +94,10 @@ int getAFreeBlock() {
 		}
 	}
 	
+	if(tempInd == -1) {
+		fprintf(stderr, "There are currently no available blocks. Quitting\n");
+		exit(0);
+	}
 	//Write back the updated free block list to the disk
 	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
 	fwrite(tempFreeBlocks, super.numBlocks, 1, fptr);
@@ -214,7 +219,7 @@ void _create(const string& fileName) {
 			memcpy(&currentInode, buffer, sizeof(inode));
 			
 			if(currentInode.fileName == fileName) {
-				fprintf(stderr, "A File with this name already exists\n");
+				fprintf(stderr, "A File with the name %s already exists\n", fileName.c_str());
 				return;
 			}
 			counter++;
@@ -820,8 +825,23 @@ int main(int argc, char** argv) {
 			_list();
 		}
 		else if(command == "SHUTDOWN") {
-			_shutdown();
+			cout << "Shutting Down" << endl;
+			break;
 		}		
+		else if(command == "DOG") {
+			string names[4];
+			names[0] = "arf";
+			names[1] = "bark";
+			names[2] = "woof";
+			names[3] = "bork";
+
+			srand(time(NULL));
+			int r = rand() % 4;
+			cout << names[r] << endl;
+		}
+		else if(command == "FOX") {
+			cout << "The year is 20XX. Everyone plays Fox at TAS levels of perfection. Because of this, the winner of a match depends solely on port priority. The RPS metagame has evolved to ridiculous levels due to it being the only remaining factor to decide matches" << endl;
+		}
 		
 
 	}
