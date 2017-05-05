@@ -341,9 +341,6 @@ void _cat(string fileName, int start, int numBytes) {
 
 	int startingBlock = findBlock(currentInode, start);
 	start %= super.blockSize;
-	
-	cerr << "startingBlock is: " << startingBlock << endl;
-	cerr << "start byte within that block is: " << start << endl;
 
 	//Traverse through direct Pointers, stop reading if -1 is ever reached
 	bool reading = true;
@@ -361,6 +358,7 @@ void _cat(string fileName, int start, int numBytes) {
 					}
 					numBytes--;
 					cout << buffer[j];
+					start = 0;
 				}	
 			}
 			else {
@@ -375,12 +373,14 @@ void _cat(string fileName, int start, int numBytes) {
 			}
 		}
 	}
+	//Decrement Starting Block by 12 if we are reading from previous, otherwise set it to 0
 	if(startingBlock >= 12) {
 		startingBlock -= 12;
 	}
 	else {
 		startingBlock = 0;
 	}
+
 	//Need to traverse indirect Block Pointer; inside we use the same logic as before except instead of only 12 data block pointers we have blockSize/size int
 	if(currentInode.indirectPointer != -1) {
 		//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
@@ -400,8 +400,7 @@ void _cat(string fileName, int start, int numBytes) {
 			else {
 				int loop;
 				if(i == startingBlock) {
-					//cout << start << endl;
-					loop = startingBlock;
+					loop = start;
 				}
 				else {
 					loop = 0;
@@ -409,19 +408,30 @@ void _cat(string fileName, int start, int numBytes) {
 				readFullBlocks(super.blockSize * tempDirectPointers[i], "data");
 				
 				for(int j = loop; j < super.blockSize && numBytes != 0; j++) {
-					//cout << j << " " << numBytes << endl;
 					if(buffer[j] == '\0') {
 						break;
 					}
 					numBytes--;
+					start = 0;
 					cout << buffer[j];
 				}
 			}
 		}
 	}
-	
-	startingBlock -= super.blockSize/sizeof(int);
-	
+	//Indirect start is the index of the indirect block to start reading from
+	//startingBlock is the index of the block within the indirect block to start reading from
+	int indirectStart;
+	if(startingBlock >= super.blockSize/sizeof(int)) {
+		startingBlock -= super.blockSize/sizeof(int);
+		indirectStart = startingBlock / (super.blockSize/sizeof(int));
+		startingBlock = startingBlock % (super.blockSize/sizeof(int));
+	}
+	else{
+		//startingBlock = 0;
+		indirectStart = 0;
+		startingBlock = 0;
+	}
+
 	//Need to traverse double indirect block pointer
 	bool reading2 = true;
 	if(currentInode.doubleIndirectPointer != -1) {
@@ -431,29 +441,40 @@ void _cat(string fileName, int start, int numBytes) {
 		memcpy(&tempIndirectPointers, buffer, super.blockSize);
 
 		//Loop through this array, and use similar logic from the indirect pointer if statement for each indirect pointer in the array
-		for(int i = 0; i < super.blockSize/sizeof(int) && reading2; i++) {
+		for(int i = indirectStart; i < super.blockSize/sizeof(int) && reading2 && numBytes != 0; i++) {
+
 			//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
 			int tempDirectPointers[super.blockSize/sizeof(int)];		
 			readFullBlocks(super.blockSize * tempIndirectPointers[i], "data");
 			memcpy(&tempDirectPointers, buffer, super.blockSize);
-			
+		
 			//Traverse through direct Pointers stored in this indirectPointer block, stop reading if -1 is ever reached
 			//Uses same logic as before
-			for(int j = 0; j < super.blockSize/sizeof(int) && reading2; j++) {
+
+			for(int j = startingBlock; j < super.blockSize/sizeof(int) && reading2 && numBytes != 0; j++) {
 				if(tempDirectPointers[j] == -1) {
 					reading2 = false;
 				}
 
 				//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
 				else {
-					char test;
+					int loop;
+					if(j == startingBlock) {
+						//Potential issue
+						loop = start;
+					}
+					else {
+						loop = 0;
+					}
 					readFullBlocks(super.blockSize * tempDirectPointers[j], "data");
 
-					for(int k = 0; k < super.blockSize; k++) {
+					for(int k = loop; k < super.blockSize && numBytes != 0; k++) {
 						if(buffer[k] == '\0') {
 							reading2 = false;
 							break;
 						}
+						numBytes--;
+						start = 0;
 						cout << buffer[k];
 					}
 				}
