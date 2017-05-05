@@ -94,10 +94,6 @@ int getAFreeBlock() {
 		}
 	}
 	
-	if(tempInd == -1) {
-		fprintf(stderr, "There are currently no available blocks. Quitting\n");
-		exit(0);
-	}
 	//Write back the updated free block list to the disk
 	fseek(fptr, super.freeBlocksLocation, SEEK_SET);
 	fwrite(tempFreeBlocks, super.numBlocks, 1, fptr);
@@ -122,8 +118,18 @@ void writeData(inode& currentInode, int loops, int& numBytes, char c, int* point
 		//If this direct pointer isn't free, find a free block for it
 		if(pointers[i] == -1) {
 			pointers[i] = getAFreeBlock();
+			
+			if(pointers[i] == -1) {
+				/* currentInode.fileSize -= numBytes;
+				
+				//Rewrite inode
+				fseek(fptr, super.blockSize * tempInodeMap[iNodeInd], SEEK_SET);
+				fwrite(&currentInode, sizeof(currentInode), 1, fptr);
+				fillBlockWithGarbage(fptr); */
+				
+				return;
+			}
 		}
-
 
 		//For the first run of the loop, might need to start at some point other than the first byte
 		if(i == block) {
@@ -235,6 +241,14 @@ void _create(const string& fileName) {
 		return;
 	}
 
+	//Call get a free block to get the next free block
+	int nextFreeBlock = getAFreeBlock();
+	//No free space left in disk to create a new inode, return
+	if(nextFreeBlock == -1) {
+		cerr << "Could not create this file; disk is currently full." << endl;
+		return;
+	}
+	
 	//All tests have been passed, proceed to create new inode in memory
 	//Initialize all pointers to -1, as these files currently have no data
 	inode newInode;
@@ -246,9 +260,6 @@ void _create(const string& fileName) {
 	fill_n(newInode.directPointers, 12, -1);
 	newInode.indirectPointer = -1;
 	newInode.doubleIndirectPointer = -1;
-
-	//Call get a free block to get the next free block
-	int nextFreeBlock = getAFreeBlock();
 
 	fseek(fptr, super.inodeMapLocation, SEEK_SET);
 
@@ -280,10 +291,10 @@ void _import(string ssfsFile, string unixFile) {
 		inputFile.seekg(0, inputFile.end);
 
 		length = inputFile.tellg();
-		unixBuffer = new char [length];
+		unixBuffer = new char [length+1];
 		inputFile.seekg(0, inputFile.beg);
-		inputFile.read(unixBuffer, length-1);
-		unixBuffer[length-1] = '\0';
+		inputFile.read(unixBuffer, length);
+		unixBuffer[length] = '\0';
 		inputFile.close();
 	}
 
@@ -293,13 +304,12 @@ void _import(string ssfsFile, string unixFile) {
 	}
 
 	//Call write on each character
-	for(int i= 0; i < length-1; i++) {
+	for(int i= 0; i < length; i++) {
 		_write(ssfsFile, unixBuffer[i], i, 1);
 	}
 
-
+	delete [] unixBuffer;
 }
-
 
 //ALMOST COMPLETED! CHECK LOGIC FOR DOUBLE INDIRECT BLOCK
 void _cat(string fileName, int start, int numBytes) {
@@ -331,6 +341,9 @@ void _cat(string fileName, int start, int numBytes) {
 
 	int startingBlock = findBlock(currentInode, start);
 	start %= super.blockSize;
+	
+	cerr << "startingBlock is: " << startingBlock << endl;
+	cerr << "start byte within that block is: " << start << endl;
 
 	//Traverse through direct Pointers, stop reading if -1 is ever reached
 	bool reading = true;
@@ -408,13 +421,9 @@ void _cat(string fileName, int start, int numBytes) {
 	}
 	
 	startingBlock -= super.blockSize/sizeof(int);
-	//--------------------------------------------------------------------------------------------
-	//THESE NEED TO BE CHECKED, LOGIC MIGHT NOT BE CORRECT; need to finish _write() first!
-	//As of right now, I'm pretty sure printing out from indirectPointers block works correctly (try writing 7000 bytes and printing it out, it works)
-	//Max bytes that can be stored in first 12 data blocks is 6144 bytes
-	//--------------------------------------------------------------------------------------------
 	
 	//Need to traverse double indirect block pointer
+	bool reading2 = true;
 	if(currentInode.doubleIndirectPointer != -1) {
 		//Create an array of indirect pointers, to be filled by the contents of the double indirect pointer block
 		int tempIndirectPointers[super.blockSize/sizeof(int)];
@@ -422,7 +431,7 @@ void _cat(string fileName, int start, int numBytes) {
 		memcpy(&tempIndirectPointers, buffer, super.blockSize);
 
 		//Loop through this array, and use similar logic from the indirect pointer if statement for each indirect pointer in the array
-		for(int i = startingBlock; i < super.blockSize/sizeof(int); i++) {
+		for(int i = 0; i < super.blockSize/sizeof(int) && reading2; i++) {
 			//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
 			int tempDirectPointers[super.blockSize/sizeof(int)];		
 			readFullBlocks(super.blockSize * tempIndirectPointers[i], "data");
@@ -430,20 +439,19 @@ void _cat(string fileName, int start, int numBytes) {
 			
 			//Traverse through direct Pointers stored in this indirectPointer block, stop reading if -1 is ever reached
 			//Uses same logic as before
-			bool reading = true;
-			for(int j = 0; j < super.blockSize/sizeof(int) && reading; j++) {
+			for(int j = 0; j < super.blockSize/sizeof(int) && reading2; j++) {
 				if(tempDirectPointers[j] == -1) {
-					reading = false;
+					reading2 = false;
 				}
+
 				//Create a buffer, seek to each block and write each character to the buffer until the block is exhausted or a NULL terminator is found
 				else {
-
-					
 					char test;
 					readFullBlocks(super.blockSize * tempDirectPointers[j], "data");
-					
+
 					for(int k = 0; k < super.blockSize; k++) {
 						if(buffer[k] == '\0') {
+							reading2 = false;
 							break;
 						}
 						cout << buffer[k];
@@ -519,24 +527,31 @@ void _delete(string fileName) {
 		readFullBlocks(super.blockSize * currentInode.doubleIndirectPointer, "data");
 		memcpy(&tempIndirectPointers, buffer, super.blockSize);
 
+		bool reading = true;
 		//Loop through this array, and use similar logic from the indirect pointer if statement for each indirect pointer in the array
-		for(int i = 0; i < super.blockSize/sizeof(int); i++) {
+		for(int i = 0; i < super.blockSize/sizeof(int) && reading; i++) {
+			
+			if(tempIndirectPointers[i] == -1) {
+				reading = false;
+			}
 
-			//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
-			int tempDirectPointers[super.blockSize/sizeof(int)];			
-			readFullBlocks(super.blockSize * tempIndirectPointers[i], "data");
-			memcpy(&tempDirectPointers, buffer, super.blockSize);
+			else {
+				//Create an array of direct pointers, to be filled by the contents of the indirect pointer block
+				int tempDirectPointers[super.blockSize/sizeof(int)];			
+				readFullBlocks(super.blockSize * tempIndirectPointers[i], "data");
+				memcpy(&tempDirectPointers, buffer, super.blockSize);
 
-			//Call the deleteData function on this array
-			deleteData(currentInode, super.blockSize/sizeof(int), tempDirectPointers, tempFreeBlocks);
+				//Call the deleteData function on this array
+				deleteData(currentInode, super.blockSize/sizeof(int), tempDirectPointers, tempFreeBlocks);
 
-			//Rewrite the new array to its original location, set the indirect Pointer to -1
-			fseek(fptr, super.blockSize * tempIndirectPointers[i], SEEK_SET);
-			fwrite(tempDirectPointers, super.blockSize, 1, fptr);
-			tempIndirectPointers[i] = -1;	
+				//Rewrite the new array to its original location, set the indirect Pointer to -1
+				fseek(fptr, super.blockSize * tempIndirectPointers[i], SEEK_SET);
+				fwrite(tempDirectPointers, super.blockSize, 1, fptr);
+				tempIndirectPointers[i] = -1;
+			}
 		}
 
-		//Rewrite the new array of indirect block pointers to its original location, set the d ouble indirect pointer to -1
+		//Rewrite the new array of indirect block pointers to its original location, set the double indirect pointer to -1
 		fseek(fptr, super.blockSize * currentInode.doubleIndirectPointer, SEEK_SET);
 		fwrite(tempIndirectPointers, super.blockSize, 1, fptr);
 		currentInode.doubleIndirectPointer = -1;
@@ -599,16 +614,6 @@ void _write(string fileName, char c, int start, int numBytes) {
 		return;
 	}
 
-	if(numBytes > super.maxFileSize) {
-		fprintf(stderr, "Cannot write more than maximum file size.\n");
-		return;
-	}
-
-	if(numBytes + currentInode.fileSize > super.maxFileSize) {
-		fprintf(stderr, "Not enough space left in file.\n");
-		return;
-	}
-
 	//Start is beyond fileSize; ERROR
 	if(start > currentInode.fileSize) {
 		fprintf(stderr, "Starting index is beyond size of file.\n");
@@ -624,6 +629,18 @@ void _write(string fileName, char c, int start, int numBytes) {
 	//Previously we were adding numBytes to fileSize each time in writeData, so it was giving wrong value for fileSize
 	if(start + numBytes >= currentInode.fileSize) {
 		currentInode.fileSize = start + numBytes;
+		
+		//Need to do this
+		/*
+		if((start + numBytes) > some variable that gives maximum number of bytes we can still write for this file) {
+			currentInode.fileSize = max size that we will be able to write;
+		}
+		
+		else {
+			currentInode.fileSize = start + numBytes;
+		}
+		
+		*/
 	} else {
 		nullTerm = true;
 	}
@@ -636,6 +653,20 @@ void _write(string fileName, char c, int start, int numBytes) {
 		//Indirect block pointer does not exist, find a free block, create it, and fill it with -1s
 		if(currentInode.indirectPointer == -1) {
 			int freeBlock = getAFreeBlock();
+			
+			if(freeBlock == -1) {
+				currentInode.fileSize -= numBytes;
+				
+				//Rewrite inode
+				fseek(fptr, super.blockSize * tempInodeMap[iNodeInd], SEEK_SET);
+				fwrite(&currentInode, sizeof(currentInode), 1, fptr);
+				fillBlockWithGarbage(fptr);
+				
+				cout << "Ran out of space in disk, wrote maximum amount possible to file." << endl;
+					
+				return;
+			}
+			
 			currentInode.indirectPointer = freeBlock;
 			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
 			int tempBlockPointers[super.blockSize/sizeof(int)];
@@ -669,36 +700,74 @@ void _write(string fileName, char c, int start, int numBytes) {
 
 	//---------------------------------------------------------------------------------------------------------
 	//Now need to check if even more numBytes left, for doubleIndirectPointer
-	//Not yet implemented but should be pretty simple, uses most of same logic as before
 	if(numBytes != 0) {
 		//This is an array of indirect Block pointers
 		int indirectBlockPointers[super.blockSize/sizeof(int)];
-
+	
 		//Double Indirect block pointer does not exist, find a free block, create it, and fill it with -1s
 		if(currentInode.doubleIndirectPointer == -1) {
 			//allocate free space for the double indirect block pointer
 			int freeBlock = getAFreeBlock();
+			
+			if(freeBlock == -1) {
+				currentInode.fileSize -= numBytes;
+				
+				//Rewrite inode
+				fseek(fptr, super.blockSize * tempInodeMap[iNodeInd], SEEK_SET);
+				fwrite(&currentInode, sizeof(currentInode), 1, fptr);
+				fillBlockWithGarbage(fptr);
+				
+				cout << "Ran out of space in disk, wrote maximum amount possible to file." << endl;
+				
+				return;
+			}
+			
 			currentInode.doubleIndirectPointer = freeBlock;
 			//Write the array of indirect block pointers to the location of the double indirect block pointer
 			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
 			fill_n(indirectBlockPointers, super.blockSize/sizeof(int), -1);
 			fwrite(indirectBlockPointers, super.blockSize, 1, fptr);
 		}
+		
+		//Now begin to write to the blocks
+		fseek(fptr, super.blockSize*currentInode.doubleIndirectPointer, SEEK_SET);
+		fread(indirectBlockPointers, super.blockSize, 1, fptr);
 
 		//Loop through the elements in the array of indirect block pointers, create arrays of block pointers in each one and write them
 		for(int i = 0; i < super.blockSize/sizeof(int) && numBytes != 0; i++) {
-			//Set the index of the indirect block pointer to be to a block of direct pointers
-			int freeBlock = getAFreeBlock();
-			indirectBlockPointers[i] = freeBlock;
-			fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
+			//This is an array of direct Block pointers
 			int blockPointers[super.blockSize/sizeof(int)];
-			fill_n(blockPointers, super.blockSize/sizeof(int), -1);
-			fwrite(blockPointers, super.blockSize, 1, fptr);
+		
+			//Set the index of the indirect block pointer to be to a block of direct pointers
+			if(indirectBlockPointers[i] == -1) {
+				int freeBlock = getAFreeBlock();
+				
+				if(freeBlock == -1) {
+					currentInode.fileSize -= numBytes;
+					
+					//Write the block of indirect pointers
+					fseek(fptr, super.blockSize*currentInode.doubleIndirectPointer, SEEK_SET);
+					fwrite(indirectBlockPointers, super.blockSize, 1, fptr);
+					
+					//Rewrite inode
+					fseek(fptr, super.blockSize * tempInodeMap[iNodeInd], SEEK_SET);
+					fwrite(&currentInode, sizeof(currentInode), 1, fptr);
+					fillBlockWithGarbage(fptr);
+					
+					cout << "Ran out of space in disk, wrote maximum amount possible to file." << endl;
+					
+					return;
+				}
+				
+				indirectBlockPointers[i] = freeBlock;
+				fseek(fptr, super.blockSize*freeBlock, SEEK_SET);
+				fill_n(blockPointers, super.blockSize/sizeof(int), -1);
+				fwrite(blockPointers, super.blockSize, 1, fptr);
+			}
 
 			//Now begin to write to the blocks
 			fseek(fptr, super.blockSize*indirectBlockPointers[i], SEEK_SET);
-			int indirectPointerTemp[super.blockSize/sizeof(int)];
-			fread(indirectPointerTemp, sizeof(int), super.blockSize/sizeof(int), fptr);
+			fread(blockPointers, super.blockSize, 1, fptr);
 
 			//Check where the block is, if it's in an indirect block allocated from a double indirect block, subtract to get the indexes
 			//This is for if the starting index is in the double indirect pointer
@@ -711,10 +780,10 @@ void _write(string fileName, char c, int start, int numBytes) {
 				blockToWrite = 0;
 			}
 
-			writeData(currentInode, super.blockSize/sizeof(int), numBytes, c, indirectPointerTemp, placeInBlock, blockToWrite, nullTerm);
-
-			fseek(fptr, super.blockSize*currentInode.indirectPointer, SEEK_SET);
-			fwrite(indirectPointerTemp, super.blockSize, 1, fptr);
+			writeData(currentInode, super.blockSize/sizeof(int), numBytes, c, blockPointers, placeInBlock, blockToWrite, nullTerm);
+			
+			fseek(fptr, super.blockSize*indirectBlockPointers[i], SEEK_SET);
+			fwrite(blockPointers, super.blockSize, 1, fptr);
 		}
 
 		//Write the block of indirect pointers
@@ -736,6 +805,7 @@ void _list() {
 	int tempInodeMap[256];
 	readFullBlocks(super.inodeMapLocation, "inodeMap");
 	memcpy(&tempInodeMap, buffer, 256*sizeof(int));
+	bool foundAFile = false;
 
 	//Loop through the iNode map, if the pointer is not to -1 then an inode exists
 	for(int i = 0; i < 256; i++) {
@@ -746,7 +816,13 @@ void _list() {
 			memcpy(&currentInode, buffer, sizeof(inode));
 			
 			cout << "File Name: " << currentInode.fileName << "\tFile Size: " << currentInode.fileSize << endl;
+			
+			foundAFile = true;
 		}
+	}
+	
+	if (foundAFile == false) {
+		cout << "No files currently exist." << endl;
 	}
 }
 
@@ -825,7 +901,7 @@ int main(int argc, char** argv) {
 			_list();
 		}
 		else if(command == "SHUTDOWN") {
-			cout << "Shutting Down" << endl;
+			cout << "Shutting down." << endl;
 			break;
 		}		
 		else if(command == "DOG") {
@@ -847,5 +923,5 @@ int main(int argc, char** argv) {
 	}
 	thread0.close();
 	
-	
+	//cerr << super.maxFileSize << endl;
 }

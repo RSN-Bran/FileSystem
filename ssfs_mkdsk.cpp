@@ -9,12 +9,6 @@
 #include <fcntl.h>
 
 #include "header.h"
-// put one inode per block because it's easy
-
-//	fptr = fopen(diskFileName.c_str(), "rb");
-//	fread(&test, sizeof(super), 1, fptr);
-//	fclose(fptr);
-//	cout << test.numBlocks << " " <<test.blockSize << endl;
 
 using namespace std;
 
@@ -49,7 +43,7 @@ int main(int argc, char** argv) {
 
 	freeBlocks = new bool [super.numBlocks];
     
-	//Check if NumBlocks is a Power of 2 //65536
+	//Check if NumBlocks is a Power of 2
 	if(!(super.numBlocks && !(super.numBlocks & (super.numBlocks-1)))) {
 		fprintf(stderr, "Error, NumBlocks must be a Power of 2\n");
 		exit(EXIT_FAILURE);
@@ -115,15 +109,12 @@ int main(int argc, char** argv) {
 	long freeBlocksEnd = ftell(fptr);
 	
 	// seek back to the beginning so we're at the right spot for writing the super block
-	super.maxFileSize = (super.blockSize*12) + ((super.blockSize/sizeof(int))*super.blockSize)+ (((super.blockSize/sizeof(int))*super.blockSize)*(super.blockSize/sizeof(int)));
 	fseek(fptr, 0, SEEK_SET);
 	fwrite(&super, sizeof(super), 1, fptr);
 	fillBlockWithGarbage(fptr);
 	
 	// Jump back to right after the free blocks list
 	fseek(fptr, freeBlocksEnd, SEEK_SET);
-	
-	//cout << ftell(fptr) << endl;
 	
 	// Insert the inodes into the file
 	for (int i = 0; i < 256; i++) {

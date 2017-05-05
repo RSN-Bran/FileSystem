@@ -14,7 +14,6 @@ typedef struct {
 	int blockNum;
 	int inodeMapLocation;
 	int freeBlocksLocation;
-	int maxFileSize;
 } superBlock;
 
 superBlock super;
@@ -27,6 +26,4 @@ void fillBlockWithGarbage(FILE* fptr) {
     if (numOfBytesToWrite != super.blockSize) {
         fwrite(&garbage, sizeof(char), numOfBytesToWrite, fptr);
     }
-    
-    //cout << numOfBytesToWrite << endl;
 }
