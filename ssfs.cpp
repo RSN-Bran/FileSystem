@@ -10,24 +10,27 @@
 #include <fcntl.h>
 #include <cstring>
 #include <time.h>
+#include <queue>
+#include <pthread.h>
 
 #include "header.h"
 
-
-/*LIST OF FUNCTIONS:
-CREATE: DONE
-IMPORT: NOT STARTED
-CAT: PARTIALLY DONE
-			ONLY PRINTS DATA IN DIRECT POINTERS
-DELETE: COMPLETE LOGIC, HAS BUGS (DEPENDS ON WRITE), COULD COPY SOME MORE LOGIC INTO SEPERATE FUNCTIONS
-WRITE: NEEDS REWORK, CURRENTLY DOES DIRECT POINTERS, BUT LOGIC NEEDS OVERHAUL
-READ: NOT STARTED
-LIST: DONE
-SHUTDOWN: NOT STARTED
-
-*/
-
 using namespace std;
+
+//Create an object for each request, with an int representing the thread and a string for the command parsed from the file
+class request {
+	public:
+		int threadNum;
+		string command;
+		request(int n, string c) {
+			threadNum = n;
+			command = c;
+		}
+};
+
+string* fileArray;
+
+queue <request>commandQueue;
 
 FILE* fptr;
 char* buffer;
@@ -847,12 +850,54 @@ void _list() {
 	}
 }
 
-void _shutdown() {
-}
+
+// ******************************************************************************************************* THREAD ******************************************************************************************************* //
+
+
+//pthread_mutex_t openLock = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
+
+//pthread_t p1 = -1;
+//pthread_t p2 = -1;
+//pthread_t p3 = -1;
+//pthread_t p4 = -1;
+
+////Disk Op threads go here
+//void* threadReader(void* arg) {
+//    cout << "here" << endl;
+//    
+//    int fileNum = *((int*) arg);
+//    
+//    cout << fileNum << endl;
+//    
+//    //cout << fileNum << " " << fileArray[fileNum] << endl;
+//    
+//	ifstream inputFile(fileArray[fileNum].c_str());
+
+//	if(inputFile.is_open()) {
+//		string line;
+//		while(getline(inputFile, line)) {
+//			request r(fileNum, line);
+//			//pthread_mutex_lock(&openLock);
+//			commandQueue.push(r);
+//			//pthread_mutex_unlock(&openLock);
+//			//cout << r.command << endl;
+//		}
+//		inputFile.close();
+//	}
+//	else{
+//		cerr << "Couldn't open " << fileArray[fileNum] << ". Quitting." << endl;
+//		exit(1);
+//	}
+
+
+//    return NULL;
+//}
 
 int main(int argc, char** argv) {
+
+	//Parse input to make sure a legal number of arguments is accepted
 	string diskFileName;
-	string fileArray[argc-2];
 	if(argc == 1) {
 		fprintf(stderr, "Input requires filename\n");
 		exit(EXIT_FAILURE);
@@ -864,9 +909,60 @@ int main(int argc, char** argv) {
 	else {
 	}
 	diskFileName = argv[1];
+	fileArray = new string[argc-2];
 	for(int i = 2; i < argc; i++) {
 		fileArray[i-2] = argv[i];
 	}
+
+//    for (int i = 0; i < argc-2; i++) {
+//        cout << fileArray[i] << endl;
+//    }
+//    
+//    pthread_t* whichThread = NULL;
+
+//	int i = 0;
+
+//	pthread_mutex_t incrementLock = PTHREAD_MUTEX_INITIALIZER;
+
+//	while (i < argc-2) {
+//        switch (i) {
+//            case 0:
+//                whichThread = &p1;
+//                break;
+//            case 1:
+//                whichThread = &p2;
+//                break;
+//            case 2:
+//                whichThread = &p3;
+//                break;
+//            case 3:
+//                whichThread = &p4;
+//                break;
+//            default:
+//                fprintf(stderr, "You've met with a terrible fate, haven't you?\n");
+//                exit(EXIT_FAILURE);
+//        }		
+
+//        if(pthread_create(whichThread, NULL, threadReader, &i) == -1) {
+//			cerr << "Error creating thread. Quitting" << endl;
+//			exit(1);
+//		}
+
+//		//cout << i << endl;
+
+//        //pthread_join(*whichThread, NULL);
+//        
+//        pthread_mutex_lock(&incrementLock);
+//        cout << "here" << endl;
+//        i++;
+//        pthread_mutex_unlock(&incrementLock);
+//	}
+	
+//	pthread_create(&p1, NULL, threadReader, 0);
+//	
+//	exit(0);
+
+	//Disk controller continues here
 
 	//Open the disk
 	fptr = fopen(diskFileName.c_str(), "rb+");
@@ -875,79 +971,96 @@ int main(int argc, char** argv) {
 	//Create a temporary char buffer which will store all the data when we're reading out of DISK for the rest of the program
 	buffer = new char[super.numBlocks*super.blockSize];
 
-	int index = 0;
-	while(index < argc-2) {
-		ifstream thread0(fileArray[index].c_str());
-		if(!thread0.is_open()) {
-			fprintf(stderr, "Can't open file\n");
-			exit(EXIT_FAILURE);	
-		}
-		string line;
-		while(getline(thread0, line)) {
-			string command;
-			stringstream ss(line);
-			ss>>command;
-			if(command == "CREATE") {
-				ss >> command;
-				_create(command);
-			}
-			else if(command == "IMPORT") {
-				string ssfsFile;
-				string unixFile;
-				ss >> ssfsFile >> unixFile;
-				_import(ssfsFile, unixFile);
-			}
-			else if(command == "CAT") {
-				ss >> command;
-				_cat(command, 0, -1);
-			}
-			else if(command == "DELETE") {
-				ss >> command;
-				_delete(command);
-			}
-			else if(command == "WRITE") {
-				string fileName;
-				char c;
-				int start;
-				int numBytes;
-				ss >> fileName >> c >> start >> numBytes;
-				_write(fileName, c, start, numBytes);
-			}
-			else if(command == "READ") {
-				string fileName;
-				int start;
-				int numBytes;
-				ss >> fileName >> start >> numBytes;
-				_cat(fileName, start, numBytes);
-			}
-			else if(command == "LIST") {
-				_list();
-			}
-			else if(command == "SHUTDOWN") {
-				cout << "Shutting down." << endl;
-				break;
-			}		
-			else if(command == "DOG") {
-				string names[4];
-				names[0] = "arf";
-				names[1] = "bark";
-				names[2] = "woof";
-				names[3] = "bork";
-
-				srand(time(NULL));
-				int r = rand() % 4;
-				cout << names[r] << endl;
-			}
-			else if(command == "FOX") {
-				cout << "The year is 20XX. Everyone plays Fox at TAS levels of perfection. Because of this, the winner of a match depends solely on port priority. The RPS metagame has evolved to ridiculous levels due to it being the only remaining factor to decide matches" << endl;
-			}
-		
-
-		}
-		thread0.close();
-		
-		index++;
+	ifstream thread0(fileArray[0].c_str());
+	if(!thread0.is_open()) {
+		fprintf(stderr, "Can't open file\n");
+		exit(EXIT_FAILURE);	
 	}
+	string line;
+	
+//	for(int i=0; i < commandQueue.size(); i++) {
+//		cout << "command is: " << commandQueue.front().command << endl;
+//		commandQueue.pop();
+//	}
+//	exit(0);
+	
+	while(getline(inputFile, line)) {
+		string command;
+		
+		stringstream ss(line);
+		ss>>command;
+		if(command == "CREATE") {
+			ss >> command;
+			_create(command);
+		}
+
+		else if(command == "IMPORT") {
+			string ssfsFile;
+			string unixFile;
+			ss >> ssfsFile >> unixFile;
+			_import(ssfsFile, unixFile);
+		}
+
+		else if(command == "CAT") {
+			ss >> command;
+			_cat(command, 0, -1);
+		}
+
+		else if(command == "DELETE") {
+			ss >> command;
+			_delete(command);
+		}
+
+		else if(command == "WRITE") {
+			string fileName;
+			char c;
+			int start;
+			int numBytes;
+			ss >> fileName >> c >> start >> numBytes;
+			_write(fileName, c, start, numBytes);
+		}
+
+		else if(command == "READ") {
+			string fileName;
+			int start;
+			int numBytes;
+			ss >> fileName >> start >> numBytes;
+			_cat(fileName, start, numBytes);
+		}
+
+		else if(command == "LIST") {
+			_list();
+		}
+
+		else if(command == "SHUTDOWN") {
+			cout << "Shutting down." << endl;
+			break;
+		}
+	
+		else if(command == "DOG") {
+			string names[4];
+			names[0] = "arf";
+			names[1] = "bark";
+			names[2] = "woof";
+			names[3] = "bork";
+
+			srand(time(NULL));
+			int r = rand() % 4;
+			cout << names[r] << endl;
+		}
+
+		//It was 1 am and we got bored
+		else if(command == "FOX") {
+			cout << "The year is 20XX. Everyone plays Fox at TAS levels of perfection. Because of this, the winner of a match depends solely on port priority. The RPS metagame has evolved to ridiculous levels due to it being the only remaining factor to decide matches" << endl;
+		}
+
+		//Does nothing, acts as comment
+		else if(command[0] == '#') {
+		}
+		
+
+	}
+	thread0.close();
 	
 	//cerr << super.maxFileSize << endl;
 }
