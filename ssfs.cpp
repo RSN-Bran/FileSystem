@@ -875,74 +875,79 @@ int main(int argc, char** argv) {
 	//Create a temporary char buffer which will store all the data when we're reading out of DISK for the rest of the program
 	buffer = new char[super.numBlocks*super.blockSize];
 
-	ifstream thread0(fileArray[0].c_str());
-	if(!thread0.is_open()) {
-		fprintf(stderr, "Can't open file\n");
-		exit(EXIT_FAILURE);	
-	}
-	string line;
-	while(getline(thread0, line)) {
-		string command;
-		stringstream ss(line);
-		ss>>command;
-		if(command == "CREATE") {
-			ss >> command;
-			_create(command);
+	int index = 0;
+	while(index < argc-2) {
+		ifstream thread0(fileArray[index].c_str());
+		if(!thread0.is_open()) {
+			fprintf(stderr, "Can't open file\n");
+			exit(EXIT_FAILURE);	
 		}
-		else if(command == "IMPORT") {
-			string ssfsFile;
-			string unixFile;
-			ss >> ssfsFile >> unixFile;
-			_import(ssfsFile, unixFile);
-		}
-		else if(command == "CAT") {
-			ss >> command;
-			_cat(command, 0, -1);
-		}
-		else if(command == "DELETE") {
-			ss >> command;
-			_delete(command);
-		}
-		else if(command == "WRITE") {
-			string fileName;
-			char c;
-			int start;
-			int numBytes;
-			ss >> fileName >> c >> start >> numBytes;
-			_write(fileName, c, start, numBytes);
-		}
-		else if(command == "READ") {
-			string fileName;
-			int start;
-			int numBytes;
-			ss >> fileName >> start >> numBytes;
-			_cat(fileName, start, numBytes);
-		}
-		else if(command == "LIST") {
-			_list();
-		}
-		else if(command == "SHUTDOWN") {
-			cout << "Shutting down." << endl;
-			break;
-		}		
-		else if(command == "DOG") {
-			string names[4];
-			names[0] = "arf";
-			names[1] = "bark";
-			names[2] = "woof";
-			names[3] = "bork";
+		string line;
+		while(getline(thread0, line)) {
+			string command;
+			stringstream ss(line);
+			ss>>command;
+			if(command == "CREATE") {
+				ss >> command;
+				_create(command);
+			}
+			else if(command == "IMPORT") {
+				string ssfsFile;
+				string unixFile;
+				ss >> ssfsFile >> unixFile;
+				_import(ssfsFile, unixFile);
+			}
+			else if(command == "CAT") {
+				ss >> command;
+				_cat(command, 0, -1);
+			}
+			else if(command == "DELETE") {
+				ss >> command;
+				_delete(command);
+			}
+			else if(command == "WRITE") {
+				string fileName;
+				char c;
+				int start;
+				int numBytes;
+				ss >> fileName >> c >> start >> numBytes;
+				_write(fileName, c, start, numBytes);
+			}
+			else if(command == "READ") {
+				string fileName;
+				int start;
+				int numBytes;
+				ss >> fileName >> start >> numBytes;
+				_cat(fileName, start, numBytes);
+			}
+			else if(command == "LIST") {
+				_list();
+			}
+			else if(command == "SHUTDOWN") {
+				cout << "Shutting down." << endl;
+				break;
+			}		
+			else if(command == "DOG") {
+				string names[4];
+				names[0] = "arf";
+				names[1] = "bark";
+				names[2] = "woof";
+				names[3] = "bork";
 
-			srand(time(NULL));
-			int r = rand() % 4;
-			cout << names[r] << endl;
-		}
-		else if(command == "FOX") {
-			cout << "The year is 20XX. Everyone plays Fox at TAS levels of perfection. Because of this, the winner of a match depends solely on port priority. The RPS metagame has evolved to ridiculous levels due to it being the only remaining factor to decide matches" << endl;
-		}
+				srand(time(NULL));
+				int r = rand() % 4;
+				cout << names[r] << endl;
+			}
+			else if(command == "FOX") {
+				cout << "The year is 20XX. Everyone plays Fox at TAS levels of perfection. Because of this, the winner of a match depends solely on port priority. The RPS metagame has evolved to ridiculous levels due to it being the only remaining factor to decide matches" << endl;
+			}
 		
 
+		}
+		thread0.close();
+		
+		index++;
 	}
-	thread0.close();
 	
 	//cerr << super.maxFileSize << endl;
 }

@@ -1,0 +1,5 @@
+#CAT - Large
+#WORKS
+CREATE file1
+IMPORT file1 large.txt
+CAT file1

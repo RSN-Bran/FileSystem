@@ -1,0 +1,6 @@
+#LIST - empty files
+#WORKS
+CREATE file1
+CREATE file2
+CREATE file3
+LIST

@@ -1,0 +1,6 @@
+#READ - LARGE
+#WORKS
+CREATE file1
+WRITE file1 x 0 1500
+WRITE file1 y 100 19
+READ file1 100 50

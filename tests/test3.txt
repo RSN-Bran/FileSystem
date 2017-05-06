@@ -1,0 +1,7 @@
+#LIST - deleted files
+#WORKS
+CREATE file1
+CREATE file2
+LIST
+DELETE file2
+LIST

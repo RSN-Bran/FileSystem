@@ -10,7 +10,7 @@ ssfs:	ssfs.cpp
 
 test:	ssfs_mkdsk	ssfs
 	./ssfs_mkdsk 1024 512 DISK
-	./ssfs DISK thread1.txt
+	./ssfs DISK thread1.txt thread2.txt thread3.txt
 
 clean:
 	rm -f *.o ssfs_mkdsk

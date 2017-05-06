@@ -1,0 +1,5 @@
+#IMPORT - xl file
+#WORKS, file size includes NULL Terminator at the end
+CREATE file1
+IMPORT file1 xl.txt
+LIST

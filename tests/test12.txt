@@ -1,0 +1,5 @@
+#READ - SMALL
+#WORKS
+CREATE file1
+WRITE file1 x 0 500
+READ file1 100 38
