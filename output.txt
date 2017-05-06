@@ -1,4 +1,0 @@
-g++ ssfs.cpp -o ssfs
-./ssfs_mkdsk 1024 512 DISK
-./ssfs DISK thread1.txt
-!!!!!!!!
